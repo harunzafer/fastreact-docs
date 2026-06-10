@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block extrahead %}
+  <!-- Dynamic favicon based on theme -->
+  <link rel="icon" type="image/png" href="{{ 'assets/images/favicon.png' | url }}" media="(prefers-color-scheme: light)">
+  <link rel="icon" type="image/png" href="{{ 'assets/images/favicon-dark.png' | url }}" media="(prefers-color-scheme: dark)">
+
+  <!-- Schema.org structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "FastReact",
+    "url": "https://fastreact.dev",
+    "description": "FastReact is a fullstack SaaS starter kit built with FastAPI (Python) and React (SPA). Auth, Google OAuth, Stripe, multi-tenancy, deploy anywhere. Self-hosted, full source code, no platform lock-in.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "author": {
+      "@type": "Person",
+      "name": "Harun Zafer",
+      "url": "https://turtledev.io"
+    },
+    "softwareVersion": "latest",
+    "programmingLanguage": ["Python", "TypeScript"],
+    "runtimePlatform": ["FastAPI", "React", "PostgreSQL"],
+    "documentation": "https://docs.fastreact.dev",
+    "codeRepository": "https://github.com/harunzafer/fastreact",
+    "keywords": "fastapi react saas starter kit, react router v7 fastapi, fullstack saas boilerplate, python saas template, react spa fastapi, multi-tenant saas, stripe fastapi react"
+  }
+  </script>
+
+  <!-- Vercel Analytics -->
+  <script>
+    window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+  </script>
+  <script defer src="/_vercel/insights/script.js"></script>
+{% endblock %}
+
+{% block footer %}
+  {{ super() }}
+  <script>
+    // Update copyright year dynamically
+    document.addEventListener('DOMContentLoaded', function() {
+      const footer = document.querySelector('.md-copyright__highlight');
+      if (footer) {
+        footer.innerHTML = footer.innerHTML.replace(/Copyright © \d{4}/, 'Copyright © ' + new Date().getFullYear());
+      }
+    });
+  </script>
+{% endblock %}

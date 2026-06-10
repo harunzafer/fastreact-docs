@@ -1,0 +1,143 @@
+site_name: FastReact Documentation
+site_description: FastReact is a fullstack SaaS starter kit built with FastAPI (Python) and React (SPA). Auth, Google OAuth, Stripe, multi-tenancy, deploy anywhere. Self-hosted, full source code, no platform lock-in. Includes generated TypeScript API clients via Orval, admin and user dashboards, and Docker Compose for local development. Supports both B2C and B2B (multi-tenant with organizations, roles, and invitations) modes.
+site_author: FastReact Team
+site_url: https://docs.fastreact.dev
+copyright: Copyright &copy; 2025 <a href="https://fastreact.dev" target="_blank">FastReact</a> Team
+
+# Use directory URLs for clean paths
+use_directory_urls: true
+
+# Repository
+repo_name: harunzafer/fastreact-docs
+repo_url: https://github.com/harunzafer/fastreact-docs
+
+# Configuration
+dev_addr: 127.0.0.1:8001
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/harunzafer/fastreact-docs
+      name: GitHub Repository
+
+theme:
+  name: material
+  favicon: assets/images/favicon.png
+  custom_dir: overrides
+  logo: assets/images/logo.svg
+  palette:
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: cyan
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: cyan
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+  features:
+    - navigation.indexes
+    - navigation.top
+    - navigation.instant
+    - navigation.instant.progress
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.annotation
+    - content.code.copy
+
+# Plugins
+plugins:
+  - search
+  - meta
+  - social
+  - llmstxt:
+      full_output: llms-full.txt
+      markdown_description: |
+        FastReact is a fullstack SaaS starter kit built with FastAPI (Python) and React (SPA). Auth, Google OAuth, Stripe, multi-tenancy, deploy anywhere. Self-hosted, full source code, no platform lock-in. Includes generated TypeScript API clients via Orval, admin and user dashboards, and Docker Compose for local development. Supports both B2C and B2B (multi-tenant with organizations, roles, and invitations) modes.
+
+        For the full documentation content concatenated into a single file, see [llms-full.txt](https://docs.fastreact.dev/llms-full.txt).
+      sections:
+        Getting Started:
+          - index.md: FastReact documentation home — overview and what's included.
+          - getting-started.md: Prerequisites, clone, install, and run your first FastReact instance.
+          - development.md: Local development workflow, hot reload, and project structure.
+        Architecture:
+          - architecture-overview.md: Stack overview — FastAPI backend, React Router v7 SPA frontend, PostgreSQL, auth, billing, multi-tenancy.
+          - b2b-mode.md: Multi-tenant B2B mode — organizations, roles, invitations.
+        Tutorials:
+          - tutorials.md: Step-by-step tutorials covering CRUD APIs, React Router v7 SPA setup, form validation, and authentication.
+        Integrations:
+          - integrations/index.md: Overview of supported integrations.
+          - integrations/stripe.md: Stripe billing setup — products, subscriptions, webhooks.
+        Deployment:
+          - deployment/index.md: Deployment overview and platform comparison.
+          - deployment/*.md
+        Operations:
+          - getting-updates.md: How to pull FastReact updates into your fork.
+          - troubleshooting.md: Common issues and fixes.
+
+# Extensions
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - admonition
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+# Page tree
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Development Guide: development.md
+  - Tutorials: tutorials.md
+  - Architecture Overview: architecture-overview.md
+  - B2B Mode: b2b-mode.md
+  - Integrations:
+      - integrations/index.md
+      - Stripe: integrations/stripe.md
+  - Deployment:
+      - deployment/index.md
+      - Azure: deployment/azure.md
+      - DigitalOcean: deployment/digitalocean.md
+      - Railway: deployment/railway.md
+      - Fly.io: deployment/fly.md
+      - AWS: deployment/aws.md
+      - Google Cloud: deployment/gcp.md
+      - Vercel: deployment/vercel.md
+      - Netlify: deployment/netlify.md
+      - Cloudflare Pages: deployment/cloudflare.md
+      - Neon: deployment/neon.md
+      - Supabase: deployment/supabase.md
+      - Render: deployment/render.md
+      - Coolify: deployment/coolify.md
+      - Docker Compose: deployment/docker-compose.md
+  - Getting Updates: getting-updates.md
+  - Troubleshooting: troubleshooting.md
+  - llms.txt: /llms.txt
+
+# Output directory for Vercel (will be overridden by build command)
+site_dir: public
