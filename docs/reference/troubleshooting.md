@@ -247,5 +247,5 @@ If you're stuck:
 
 1. Check the [GitHub Issues](https://github.com/harunzafer/fastreact/issues) for similar problems
 2. Search for the error message online
-3. Review the [Architecture Overview](architecture-overview.md) to understand expected behavior
+3. Review the [Architecture Overview](architecture.md) to understand expected behavior
 4. Enable debug logging in `backend/.env`: `FR_LOG_LEVEL=debug`

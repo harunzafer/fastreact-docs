@@ -1,6 +1,6 @@
 ---
-description: "FastReact architecture guide - Learn the monorepo structure, layered backend design, multi-tenant database, type-safe frontend, and key architectural decisions behind this FastAPI + React Router v7 starter kit."
-keywords: "fastreact architecture, fastapi architecture, react router v7 architecture, monorepo, layered architecture, dependency injection, multi-tenant saas, postgresql, sqitch migrations, type-safe api"
+description: "FastReact architecture guide - Learn the monorepo structure, layered backend design, multi-tenant database, type-safe frontend, and key architectural decisions behind this FastAPI + React starter kit."
+keywords: "fastreact architecture, fastapi architecture, react architecture, monorepo, layered architecture, dependency injection, multi-tenant saas, postgresql, sqitch migrations, type-safe api"
 ---
 
 # Architecture
@@ -14,7 +14,7 @@ FastReact has four parts:
 ```
 fastreact/
 ├── backend/          # FastAPI + Python (your API)
-├── frontend/         # React Router v7 + TypeScript (admin dashboard)
+├── frontend/         # React + TypeScript (admin dashboard)
 ├── landing/          # React (marketing site)
 └── backend/db/       # PostgreSQL + Sqitch (database migrations)
 ```
@@ -33,14 +33,14 @@ FastReact intentionally avoids many popular libraries and frameworks that other 
 
 ## 2. End-to-End Request Flow
 
-Let's trace what happens when a user creates a project in your SaaS app. (This example follows the [Adding a New Entity tutorial](tutorials.md#adding-a-new-entity-end-to-end) where you build a project management feature.)
+Let's trace what happens when a user creates a project in your SaaS app. (This example follows the [Adding a New Entity tutorial](../guides/adding-a-feature.md#adding-a-new-entity-end-to-end) where you build a project management feature.)
 
 ### High-Level Flow
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant Frontend as Frontend<br/>(React Router v7)
+    participant Frontend as Frontend<br/>(React)
     participant Backend as Backend<br/>(FastAPI)
 
     User->>Frontend: Fill form & click "Create Project"
@@ -111,7 +111,7 @@ app/
 ```
 
 !!! tip "Keep Layers Separated"
-    Don't leak concerns between layers. Services shouldn't know about HTTP status codes or request objects. Repositories shouldn't contain business logic.
+Don't leak concerns between layers. Services shouldn't know about HTTP status codes or request objects. Repositories shouldn't contain business logic.
 
     **Bad example** - Service returning HTTP exception:
     ```python
@@ -172,147 +172,41 @@ This centralization provides several benefits. Object lifecycles (singleton vs f
 
 ## 4. Database: Multi-Tenant PostgreSQL
 
-FastReact uses a multi-tenant architecture where all data is scoped to organizations. Every user belongs to at least one organization, and all business data (projects, notes, etc.) is associated with an organization, not individual users. This design supports both individual users and teams without changing the underlying data model.
+All data is scoped to an **organization** (the tenant boundary), so the schema serves both individual users and teams without changing. Migrations are plain SQL managed with **Sqitch** — no ORM. The mode (`b2c` / `b2b`) is set by `FS_MODE` and changes only application logic, not the schema.
 
-**Core entities:**
-
-- `user` - Individual accounts with email/password authentication
-- `organization` - The tenant boundary - all business data belongs to an organization
-- `role` - Permission level: `member` (basic access), `org_admin` (manage organization), `sys_admin` (platform-wide access)
-- `session` - Server-side sessions for authentication
-- `plan` - Subscription tiers (free, pro, enterprise, etc.)
-- `organization_plan` - Links organizations to their current subscription plan
-
-**B2C mode** (individual users):
-
-Public registration is enabled. When a user signs up, they automatically get their own organization. Each user operates independently with their personal workspace. User invitations and organization management features are disabled in this mode.
-
-**B2B mode** (team collaboration):
-
-Public registration is disabled. System administrators create organizations and assign an organization admin. The organization admin can then invite teammates via email. All members share access to the same data within that organization. Users can belong to multiple organizations (for example, a contractor working with several clients).
-
-!!! info "Future Enhancement"
-    Self-service organization creation (allowing users to create teams from the signup page) is being considered for a future release.
-
-The mode is controlled by `FR_MODE` environment variable (`b2b` or `b2c`), which affects signup flow and default UI behavior. The database schema remains identical - only the application logic changes. For complete details on B2B mode, see [B2B Mode](b2b-mode.md).
-
-### Database migrations with Sqitch
-
-FastReact uses Sqitch for database schema versioning. Because migrations are plain SQL files in version control, they're reviewed alongside code changes in pull requests.
-
-**Why Sqitch?** Most migration tools are tied to a specific ORM or language. Sqitch is language-agnostic and works with raw SQL, making it perfect for FastReact's minimal dependencies philosophy. Migrations are explicit SQL files that you can review, optimize, and understand without learning an abstraction layer.
-
-Create a new migration:
-
-```bash
-cd backend/db
-sqitch add add_feature -n "Add feature table"
-```
-
-This creates three SQL files in the `backend/db/` directory:
-
-- `deploy/add_feature.sql` - How to apply the change
-- `revert/add_feature.sql` - How to undo it
-- `verify/add_feature.sql` - How to verify it worked
-
-Deploy migrations:
-
-```bash
-./sqitch.sh dev deploy
-```
-
-!!! info "Why the sqitch.sh wrapper?"
-    The `sqitch.sh` script wraps the native Sqitch command to add FastReact-specific features:
-
-    - **Multi-environment support**: Automatically selects the correct database URL based on the stage (dev, beta, gamma, prod, test)
-    - **Safety checks**: Validates that all migration files include `BEGIN;` and `COMMIT;` to ensure transactional integrity
-    - **Revert protection**: Requires `--to` flag for revert operations to prevent accidental complete rollbacks
-    - **Environment loading**: Loads database URLs from `.env` files for each environment
+See **[Database](../features/database.md)** for the schema, `db_config`, and the Sqitch workflow, and **[Multi-Tenancy](../features/multi-tenancy.md)** for the organization, role, and invitation model.
 
 ---
 
-## 5. Frontend: Type-Safe React Router v7
+## 5. Frontend: Type-Safe React
 
-The frontend is a React Router v7 SPA (Single Page Application) that stays thin by delegating all business logic to the backend. It uses React 19 hooks for state management and maintains type safety through auto-generated API clients.
+The frontend is a React SPA that stays thin by delegating all business logic to the backend. It uses React Router v7, with React hooks and Context for state, and maintains type safety through an auto-generated API client.
 
 **Directory structure:**
 
 ```
 app/
-├── routes/
-│   ├── auth/            # Login, signup, password reset (public pages)
-│   │   ├── layout.tsx
-│   │   ├── login.tsx
-│   │   └── signup.tsx
-│   ├── protected/       # Dashboard, settings (requires authentication)
-│   │   ├── layout.tsx
-│   │   ├── dashboard.tsx
-│   │   └── ...
-│   └── routes.ts        # Route configuration
-├── components/          # Reusable UI components
-├── contexts/            # Application-wide context providers (auth, etc.)
-├── hooks/               # Custom React hooks
-└── lib/
-    ├── api/gen/         # Auto-generated TypeScript API client (Orval)
-    └── ...
+├── routes/           # Route modules (React Router v7)
+├── components/       # Reusable UI components
+├── contexts/         # App-wide providers (auth, config)
+├── hooks/            # Custom React hooks
+├── lib/
+│   ├── api/gen/      # Auto-generated TypeScript API client (Orval)
+│   ├── auth/         # Session management (auth context)
+│   └── utils/        # Helper functions
+└── root.tsx          # Root layout
 ```
 
 **Key features:**
 
-- **Layout-based authentication**: Routes under `routes/protected/layout.tsx` automatically check for valid sessions
-- **Auto-generated API client**: TypeScript types generated from OpenAPI spec ensure compile-time safety
-- **React 19 hooks**: Modern state management with `useState`, `useEffect`, `useContext`, and custom hooks
-- **TailwindCSS v4 + DaisyUI v5**: Utility-first styling with pre-built component themes
+- **Route-based authentication**: protected routes check for a valid session via the auth context
+- **Auto-generated API client**: TypeScript types generated from the OpenAPI spec ensure compile-time safety
+- **React Context + hooks**: global state (auth, config) via Context; local state via hooks
+- **TailwindCSS + DaisyUI**: utility-first styling with pre-built component themes
 
 ### Auto-generated API client
 
-When you change backend models or routes:
-
-```bash
-cd frontend
-npm run generate  # Reads OpenAPI spec, generates TypeScript client
-```
-
-Now you get compile-time type safety:
-
-```typescript
-import { createNote } from "~/lib/api/gen/notes";
-import type { CreateNoteRequest, NoteResponse } from "~/lib/api/gen/model";
-
-// TypeScript knows the request and response types
-const note: NoteResponse = await createNote({
-  title: "My Note",
-  content: "Note content",
-});
-```
-
-Here's how it works:
-
-1. Define Pydantic models and routes in the backend:
-
-```python
-class CreateNoteRequest(BaseModel):
-    title: str
-    content: str | None
-
-class NoteResponse(BaseModel):
-    id: int
-    title: str
-    content: str | None
-
-@router.post("", response_model=NoteResponse, operation_id="createNote")
-async def create_note(data: CreateNoteRequest, ...):
-    # The response_model and operation_id are crucial:
-    # - response_model defines the return type in OpenAPI spec
-    # - operation_id becomes the TypeScript function name
-    ...
-```
-
-2. FastAPI auto-generates an OpenAPI spec from the Pydantic models and route decorators
-3. Orval reads the spec and generates TypeScript types and functions
-4. Import and use the generated functions with full type safety
-
-Change the backend model or route → Run `npm run generate` → TypeScript compiler catches any breaking changes in the frontend.
+The frontend's TypeScript API client is generated from the backend's OpenAPI spec, so a backend change surfaces as a compile-time error in the frontend. See **[Type-Safe API Client (Orval)](../guides/orval.md)**.
 
 ---
 
@@ -338,13 +232,14 @@ Sessions expire after 24 hours (configurable). The backend stores hashed session
 
 ### Role-based access control
 
-Three roles:
+Four roles, ordered by precedence (`readonly` < `member` < `org_admin` < `sys_admin`):
 
+- **readonly** - View-only access
 - **member** - Basic user (can use the app)
 - **org_admin** - Manage organization (invite users, change settings)
 - **sys_admin** - Full system access (manage all orgs, see analytics)
 
-Protect routes with role checks:
+See [Authentication](../features/authentication.md) and [Security](../features/security.md) for the full model. Protect routes with role checks:
 
 ```python
 @router.get("/admin/users")
@@ -354,12 +249,22 @@ async def list_users(
     # Only sys_admins can reach this
 ```
 
-On the frontend, routes under `routes/protected/layout.tsx` automatically check authentication and redirect to login if the session is invalid:
+Protected routes check authentication on the frontend via the auth context:
 
 ```tsx
-// routes/protected/layout.tsx
-export async function clientLoader() {
-  await ensureAuthenticated(); // Redirects to /login if not authenticated
+// app/routes/protected/layout.tsx
+import { useEffect } from "react";
+import { useNavigate } from "react-router";
+import { useAuth } from "~/lib/auth/auth-context";
+
+export default function ProtectedLayout() {
+  const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!isAuthenticated) navigate("/login"); // redirect if not authenticated
+  }, [isAuthenticated]);
+  // ... render protected content
 }
 ```
 
@@ -438,9 +343,11 @@ See [Section 3](#3-backend-layered-architecture) for why services shouldn't know
 
 ---
 
+---
+
 **Next Steps:**
 
-- [Development Guide](development.md) - Start building
-- [B2B Mode](b2b-mode.md) - Configure team collaboration features
-- [Integrations](integrations/index.md) - Add Stripe, SendGrid, and OAuth
+- [Development Guide](../guides/development-workflow.md) - Start building
+- [B2B Mode](../features/multi-tenancy.md) - Configure team collaboration features
+- [Integrations](../features/authentication.md) - Add Stripe, SendGrid, and OAuth
 - [Troubleshooting](troubleshooting.md) - Fix issues

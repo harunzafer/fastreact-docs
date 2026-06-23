@@ -25,7 +25,7 @@ Deploy FastReact using Azure's modern container and serverless services. This gu
 
 For a small production app:
 - Container Apps: ~$15-30/month
-- PostgreSQL Flexible Server: ~$50-100/month (can use [Neon](neon.md) for ~$20/month instead)
+- PostgreSQL Flexible Server: ~$50-100/month (can use [Neon](https://neon.tech) for ~$20/month instead)
 - Static Web Apps: Free tier available, ~$10/month for standard
 - Container Registry: ~$5/month
 
@@ -53,147 +53,346 @@ az account set --subscription "Your Subscription Name"
 ### 2. Create Resource Group
 
 ```bash
+# Create resource group in your preferred region
 az group create \
   --name fastreact-prod-rg \
   --location eastus
 ```
 
-### 3. Create Container Registry
+### 3. Create PostgreSQL Database
 
 ```bash
-az acr create \
-  --resource-group fastreact-prod-rg \
-  --name fastreactregistry \
-  --sku Basic \
-  --admin-enabled true
-```
-
-### 4. Build and Push Docker Image
-
-```bash
-cd backend
-
-# Login to registry
-az acr login --name fastreactregistry
-
-# Build and push
-az acr build \
-  --registry fastreactregistry \
-  --image fastreact-api:latest .
-```
-
-### 5. Create PostgreSQL Database
-
-```bash
+# Create PostgreSQL Flexible Server
 az postgres flexible-server create \
   --resource-group fastreact-prod-rg \
-  --name fastreact-db \
+  --name fastreact-prod-db \
   --location eastus \
-  --admin-user fastreactadmin \
-  --admin-password "YourSecurePassword123!" \
+  --admin-user fsadmin \
+  --admin-password <STRONG-PASSWORD> \
   --sku-name Standard_B1ms \
-  --tier Burstable \
+  --storage-size 32 \
   --version 16
+
+# Allow Azure services to connect
+az postgres flexible-server firewall-rule create \
+  --resource-group fastreact-prod-rg \
+  --name fastreact-prod-db \
+  --rule-name AllowAzureServices \
+  --start-ip-address 0.0.0.0 \
+  --end-ip-address 0.0.0.0
+
+# Create database
+az postgres flexible-server db create \
+  --resource-group fastreact-prod-rg \
+  --server-name fastreact-prod-db \
+  --database-name fastreact
 ```
 
-### 6. Create Container App Environment
+**Alternative:** Use [Neon](https://neon.tech) or [Supabase](https://supabase.com) for a more affordable managed Postgres option.
+
+### 4. Run Database Migrations
 
 ```bash
-az containerapp env create \
-  --name fastreact-env \
+cd db
+
+# Add production database URL to .env
+echo 'DATABASE_URL_PROD="postgres://fsadmin:<PASSWORD>@fastreact-prod-db.postgres.database.azure.com/fastreact?sslmode=require"' >> .env
+
+# Deploy migrations
+./sqitch.sh prod deploy
+
+# Verify
+./sqitch.sh prod status
+```
+
+### 5. Create Admin User
+
+```bash
+cd ../backend
+
+# Create production admin account
+uv run scripts/create_admin.py \
+  --env prod \
+  --password <ADMIN-PASSWORD> \
+  --domain yourdomain.com
+```
+
+### 6. Create Container Registry
+
+```bash
+# Create Azure Container Registry
+az acr create \
   --resource-group fastreact-prod-rg \
+  --name faststvelteregistry \
+  --sku Basic \
+  --admin-enabled true
+
+# Get registry credentials
+az acr credential show --name faststvelteregistry
+```
+
+### 7. Build and Push Backend Container
+
+```bash
+# Login to registry
+az acr login --name faststvelteregistry
+
+# Build and push backend image
+cd backend
+docker build -t faststvelteregistry.azurecr.io/fastreact-api:latest .
+docker push faststvelteregistry.azurecr.io/fastreact-api:latest
+```
+
+### 8. Create Container Apps Environment
+
+```bash
+# Create Container Apps Environment
+az containerapp env create \
+  --resource-group fastreact-prod-rg \
+  --name fastreact-prod-env \
   --location eastus
 ```
 
-### 7. Deploy Backend Container App
+### 9. Deploy Backend API
 
 ```bash
+# Get registry credentials
+REGISTRY_USERNAME=$(az acr credential show --name faststvelteregistry --query username -o tsv)
+REGISTRY_PASSWORD=$(az acr credential show --name faststvelteregistry --query passwords[0].value -o tsv)
+
+# Create Container App
 az containerapp create \
-  --name fastreact-api \
   --resource-group fastreact-prod-rg \
-  --environment fastreact-env \
-  --image fastreactregistry.azurecr.io/fastreact-api:latest \
-  --target-port 8000 \
+  --name fastreact-prod-api \
+  --environment fastreact-prod-env \
+  --image faststvelteregistry.azurecr.io/fastreact-api:latest \
+  --target-port 3100 \
   --ingress external \
-  --registry-server fastreactregistry.azurecr.io \
-  --env-vars \
-    FR_ENVIRONMENT=prod \
-    FR_DB_URL="postgresql://fastreactadmin:YourSecurePassword123!@fastreact-db.postgres.database.azure.com/fastreact" \
-    FR_BASE_WEB_URL="https://your-frontend.azurestaticapps.net" \
-    FR_BASE_API_URL="https://fastreact-api.yourdomain.azurecontainerapps.io"
+  --min-replicas 1 \
+  --max-replicas 5 \
+  --cpu 1.0 \
+  --memory 2Gi \
+  --registry-server faststvelteregistry.azurecr.io \
+  --registry-username $REGISTRY_USERNAME \
+  --registry-password $REGISTRY_PASSWORD
 ```
 
-### 8. Deploy Frontend to Static Web Apps
+### 10. Configure Environment Variables
 
 ```bash
-cd frontend
-npm run build
-
-az staticwebapp create \
-  --name fastreact-frontend \
+# Set environment variables for the API
+az containerapp update \
   --resource-group fastreact-prod-rg \
-  --source . \
-  --location eastus2 \
-  --branch main \
-  --app-location "/" \
-  --output-location "build/client"
+  --name fastreact-prod-api \
+  --set-env-vars \
+    FS_ENVIRONMENT=prod \
+    FS_DB_URL="postgres://fsadmin:<PASSWORD>@fastreact-prod-db.postgres.database.azure.com/fastreact?sslmode=require" \
+    FS_JWT_SECRET_KEY="<RANDOM-SECRET-KEY>" \
+    FS_BASE_API_URL="https://<YOUR-CONTAINER-APP-URL>" \
+    FS_BASE_WEB_URL="https://app.yourdomain.com" \
+    FS_CORS_ORIGINS="https://app.yourdomain.com,https://yourdomain.com" \
+    FS_STRIPE_API_KEY="<YOUR-STRIPE-KEY>" \
+    FS_STRIPE_WEBHOOK_SECRET="<YOUR-STRIPE-WEBHOOK-SECRET>" \
+    FS_SENDGRID_API_KEY="<YOUR-SENDGRID-KEY>"
 ```
 
-## Environment Variables
+Get your Container App URL:
+```bash
+az containerapp show \
+  --resource-group fastreact-prod-rg \
+  --name fastreact-prod-api \
+  --query properties.configuration.ingress.fqdn \
+  --output tsv
+```
 
-Set all required environment variables in the Container App:
+### 11. Deploy Frontend to Static Web Apps
+
+```bash
+# Create Static Web App for frontend
+az staticwebapp create \
+  --resource-group fastreact-prod-rg \
+  --name fastreact-prod-app \
+  --location eastus \
+  --source https://github.com/yourusername/your-fastreact-fork \
+  --branch main \
+  --app-location "frontend" \
+  --output-location "build" \
+  --login-with-github
+```
+
+This will:
+1. Connect to your GitHub repository
+2. Set up GitHub Actions for automatic deployments
+3. Build and deploy your frontend
+
+**Configure environment variables** in Azure Portal:
+1. Go to Static Web App → Configuration
+2. Add application settings:
+   - `PUBLIC_API_BASE_URL`: Your Container App URL
+   - `PUBLIC_APP_NAME`: Your app name
+
+### 12. Deploy Landing Page
+
+```bash
+# Create Static Web App for landing
+az staticwebapp create \
+  --resource-group fastreact-prod-rg \
+  --name fastreact-prod-landing \
+  --location eastus \
+  --source https://github.com/yourusername/your-fastreact-fork \
+  --branch main \
+  --app-location "landing" \
+  --output-location "build" \
+  --login-with-github
+```
+
+## Custom Domains (Optional)
+
+### For Container App (API)
+
+```bash
+az containerapp hostname bind \
+  --resource-group fastreact-prod-rg \
+  --name fastreact-prod-api \
+  --hostname api.yourdomain.com
+```
+
+### For Static Web Apps
+
+```bash
+az staticwebapp hostname set \
+  --resource-group fastreact-prod-rg \
+  --name fastreact-prod-app \
+  --hostname app.yourdomain.com
+```
+
+## Scaling Configuration
+
+Container Apps auto-scale based on HTTP requests by default. Configure custom scaling:
 
 ```bash
 az containerapp update \
-  --name fastreact-api \
   --resource-group fastreact-prod-rg \
-  --set-env-vars \
-    FR_STRIPE_API_KEY="sk_live_..." \
-    FR_STRIPE_WEBHOOK_SECRET="whsec_..." \
-    FR_RESEND_API_KEY="re_..." \
-    FR_GOOGLE_CLIENT_ID="..." \
-    FR_GOOGLE_CLIENT_SECRET="..."
+  --name fastreact-prod-api \
+  --min-replicas 2 \
+  --max-replicas 10 \
+  --scale-rule-name "http-scale" \
+  --scale-rule-type "http" \
+  --scale-rule-metadata "concurrentRequests=50"
 ```
 
-## CI/CD with GitHub Actions
+## Monitoring & Logs
 
-Add to `.github/workflows/deploy.yml`:
+View Container App logs:
 
-```yaml
-name: Deploy to Azure
+```bash
+# Stream live logs
+az containerapp logs show \
+  --resource-group fastreact-prod-rg \
+  --name fastreact-prod-api \
+  --follow
 
-on:
-  push:
-    branches: [main]
-
-jobs:
-  deploy-backend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Build and push container
-        run: |
-          az acr build \
-            --registry fastreactregistry \
-            --image fastreact-api:${{ github.sha }} \
-            ./backend
-
-      - name: Deploy to Container Apps
-        run: |
-          az containerapp update \
-            --name fastreact-api \
-            --resource-group fastreact-prod-rg \
-            --image fastreactregistry.azurecr.io/fastreact-api:${{ github.sha }}
+# Recent logs
+az containerapp logs show \
+  --resource-group fastreact-prod-rg \
+  --name fastreact-prod-api \
+  --tail 100
 ```
 
-## Useful Links
+## Updating Your Application
 
-- [Azure Container Apps Docs](https://learn.microsoft.com/en-us/azure/container-apps/)
-- [Azure PostgreSQL Flexible Server Docs](https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/)
-- [Azure Static Web Apps Docs](https://learn.microsoft.com/en-us/azure/static-web-apps/)
+### Update Backend
+
+```bash
+# Build new image
+cd backend
+docker build -t faststvelteregistry.azurecr.io/fastreact-api:v2 .
+docker push faststvelteregistry.azurecr.io/fastreact-api:v2
+
+# Update Container App
+az containerapp update \
+  --resource-group fastreact-prod-rg \
+  --name fastreact-prod-api \
+  --image faststvelteregistry.azurecr.io/fastreact-api:v2
+```
+
+### Update Frontend
+
+Frontend updates automatically via GitHub Actions when you push to your repository.
+
+## Security Best Practices
+
+1. **Use Azure Key Vault** for secrets instead of environment variables:
+   ```bash
+   az keyvault create \
+     --resource-group fastreact-prod-rg \
+     --name fastreact-vault
+   ```
+
+2. **Enable managed identity** for Container Apps to access Key Vault
+
+3. **Restrict database access** to only Container Apps IP range
+
+4. **Enable Azure Front Door** for DDoS protection and CDN
+
+5. **Set up Azure Monitor** for alerts on errors and performance
+
+## Troubleshooting
+
+**Container App won't start:**
+```bash
+# Check logs
+az containerapp logs show \
+  --resource-group fastreact-prod-rg \
+  --name fastreact-prod-api \
+  --follow
+```
+
+**Database connection issues:**
+- Verify firewall rules allow Container Apps
+- Check connection string format
+- Ensure SSL mode is set to `require`
+
+**Static Web App build fails:**
+- Check GitHub Actions logs in your repository
+- Verify `app-location` and `output-location` paths
+- Ensure Node.js version compatibility
+
+## Cost Optimization Tips
+
+1. **Use Neon/Supabase for database** - Save ~$30-80/month compared to Azure PostgreSQL
+2. **Start with 1 replica** - Scale up only when needed
+3. **Use consumption-based Container Apps** - Pay only for actual usage
+4. **Combine frontend and landing** - Host both on same Static Web App if possible
+5. **Use Azure Reservations** - Save up to 38% with 1-year commitment for predictable workloads
+
+## Next Steps
+
+- Set up monitoring and alerts
+- Configure backups for database
+- Set up CI/CD pipeline for automated deployments
+- Configure custom domains
+- Set up Azure Front Door for CDN
+
+## Useful Commands
+
+```bash
+# View all resources
+az resource list --resource-group fastreact-prod-rg --output table
+
+# Get Container App URL
+az containerapp show \
+  --resource-group fastreact-prod-rg \
+  --name fastreact-prod-api \
+  --query properties.configuration.ingress.fqdn
+
+# Scale Container App
+az containerapp update \
+  --resource-group fastreact-prod-rg \
+  --name fastreact-prod-api \
+  --min-replicas 2 \
+  --max-replicas 10
+
+# Delete everything (careful!)
+az group delete --name fastreact-prod-rg
+```

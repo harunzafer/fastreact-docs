@@ -21,7 +21,7 @@ In B2B mode, FastReact operates as a closed registration system where:
 When you run `uv run init.py` and select **B2B mode**, the script creates:
 
 1. A system administrator account (sys_admin)
-2. Sets `FR_APP_MODE=b2b` in your environment
+2. Sets `FS_MODE=b2b` in your environment
 
 ## The B2B Flow
 
@@ -97,10 +97,10 @@ When an org_admin invites a new member:
 
 When running in B2B mode:
 
-- Public signup page (`/signup`) returns 404
-- OAuth signup creates accounts only for existing invited users
-- Individual billing is hidden (billing managed at organization level)
-- Only invitation-based registration is allowed
+- ❌ Public signup page (`/signup`) returns 404
+- ❌ OAuth signup creates accounts only for existing invited users
+- ❌ Individual billing is hidden (billing managed at organization level)
+- ✅ Only invitation-based registration is allowed
 
 ## Development vs Production
 
@@ -111,17 +111,14 @@ The flow is the same in both development and production environments. The key di
 
 ## Configuration
 
-B2B mode is controlled by the `FR_APP_MODE` environment variable:
+B2B mode is controlled by the backend `FS_MODE` environment variable:
 
 ```bash
 # Backend (.env)
-FR_APP_MODE=b2b
-
-# Frontend (.env)
-VITE_APP_MODE=b2b
+FS_MODE=b2b
 ```
 
-To switch modes, update these variables and restart your services.
+The frontend doesn't need a mode variable — it reads the mode from the backend's `/config` endpoint at runtime. Update `FS_MODE` and restart the backend.
 
 ## Common Workflows
 

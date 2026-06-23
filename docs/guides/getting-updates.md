@@ -15,7 +15,7 @@ keywords: "fastreact updates, git upstream, merge upstream, starter kit updates,
 - New routes, services, repositories in their own files
 - New frontend pages and components
 - New database migrations
-- Conflicts are still expected in files such as `container.py` or `routes.ts` where new components are registered. But manageable.
+- Conflicts are still expected in files such as `container.py` or `routes.py` where new components are registered. But manageable.
 
 ## Update Methods
 
@@ -43,13 +43,13 @@ git log --oneline HEAD..upstream/main
 # Merge updates
 git merge upstream/main
 
-# Resolve conflicts if any (usually in container.py, routes.ts)
+# Resolve conflicts if any (usually in container.py, routes.py)
 # After resolving, commit the merge
 
 # Test the changes
 cd backend && pytest                                    # For backend changes
-cd frontend && npm run build && npm run typecheck       # For frontend changes
-cd landing && npm run build                             # For landing page changes
+cd frontend && npm run build && npm run test            # For frontend changes
+cd landing && npm run build && npm run check            # For landing page changes
 
 # Push to your repository
 git push origin main
@@ -95,6 +95,7 @@ git cherry-pick <start-commit>..<end-commit>
 git cherry-pick --continue
 ```
 
+
 ### 4. Manual Copy
 
 Remove the FastReact remote and manually copy changes when needed:
@@ -122,5 +123,5 @@ git push -u origin main
 ---
 
 **Next Steps:**
-- [Development Guide](development.md) - Build your application
-- [Deployment](deployment/index.md) - Deploy to production
+- [Development Guide](development-workflow.md) - Build your application
+- [Deployment](../deployment/index.md) - Deploy to production
