@@ -208,6 +208,67 @@ app/
 
 The frontend's TypeScript API client is generated from the backend's OpenAPI spec, so a backend change surfaces as a compile-time error in the frontend. See **[Type-Safe API Client (Orval)](../guides/orval.md)**.
 
+### Data loading: `clientLoader` vs `useEffect`
+
+Routes fetch their data in a **`clientLoader`**, not in a `useEffect`. The loader starts as soon as you navigate, so the page appears immediately instead of mounting empty and then filling itself in.
+
+There are two flavours, and one exception.
+
+| Route type | Pattern | Example to copy |
+|---|---|---|
+| Lists, tables, dashboards, detail views | `clientLoader`, **streamed** (return the promise, do not `await` it) | `routes/protected/notes.tsx` |
+| Editable forms | `clientLoader`, **awaited** (return the finished data) | `routes/protected/settings.tsx` |
+| Polling, WebSockets, upload progress | `useEffect` in the component, with cleanup | `routes/protected/admin-health.tsx` |
+
+**Streamed** means the loader returns a promise it never awaited:
+
+```ts
+export async function clientLoader() {
+	return { notes: listNotes() }; // note: no await
+}
+```
+
+The route unwraps it with `<Suspense>` + `<Await>`, which puts the loading, loaded and failed states in one place. You do not write a `loading` flag:
+
+```tsx
+<Suspense fallback={<NotesGridSkeleton />}>
+	<Await resolve={notes} errorElement={<p>Failed to load notes.</p>}>
+		{(notes) => <NotesGrid notes={notes} />}
+	</Await>
+</Suspense>
+```
+
+**Awaited** is for forms, and the reason is dirty-detection. When the loader hands over finished data, `loaderData` *is* the saved state, so "does this form have unsaved changes?" is just a comparison against it:
+
+```ts
+const [theme, setTheme] = useState(data.theme); // seeded once, then follows the user
+const hasChanges = theme !== data.theme;
+```
+
+Do it the other way and you end up maintaining a second `originalTheme` copy by hand, and resyncing it after every save. (With `react-hook-form`, seed `defaultValues` from the loader and let its own `isDirty` do this for you.)
+
+**Two rules that keep this working:**
+
+1. **Never copy loader data into `useState`** on a read-only route. The copy goes stale the moment the loader re-runs, and then two places disagree about the truth. Read `loaderData` directly. Forms are the exception, and only for the fields being edited, as above.
+2. **Refresh by re-running the loader, not by refetching.** After a mutation, call `revalidate()`:
+
+```ts
+await deleteNote(id);
+await revalidate(); // re-runs the loader, which refetches the list
+```
+
+`revalidate()` re-runs every loader on the active route, so there is nothing to name and nothing to keep in sync.
+
+!!! note "Revalidation keeps your data on screen"
+
+    React Router re-runs loaders inside a transition, so the current UI stays put until the new data is ready. It does **not** fall back to the `<Suspense>` skeleton. That is why deleting a row updates the list in place rather than flashing a spinner — and it is what makes polling through the loader viable (see `admin-health.tsx`).
+
+**Why not `useEffect`?** It only runs after the component mounts, so navigation completes, the page renders empty, and *then* the request starts. You also hand-roll `loading` and `error` state, refetching when a route param changes, and cancelling requests that a newer one superseded. Loaders do all of that for you, and fetch-on-mount is what the `react-hooks/set-state-in-effect` lint rule is warning you about.
+
+Keep `useEffect` for what is genuinely tied to the component's lifetime: a timer, a socket, an event listener you have to remove.
+
+Background reading: [when to use load functions and onMount](https://turtledev.io/blog/sveltekit-spa-when-to-use-load-functions-and-onmount) and [load functions vs onMount](https://turtledev.io/blog/sveltekit-spa-load-functions-vs-onmount). They are written against SvelteKit, but the decision is the same one; `clientLoader` is React Router's `+page.ts`.
+
 ---
 
 ## 6. Authentication & Security
