@@ -228,8 +228,8 @@ This will:
 **Configure environment variables** in Azure Portal:
 1. Go to Static Web App → Configuration
 2. Add application settings:
-   - `PUBLIC_API_BASE_URL`: Your Container App URL
-   - `PUBLIC_APP_NAME`: Your app name
+   - `VITE_API_BASE_URL`: Your Container App URL
+   - `VITE_APP_NAME`: Your app name
 
 ### 12. Deploy Landing Page
 
@@ -367,6 +367,26 @@ az containerapp logs show \
 5. **Use Azure Reservations** - Save up to 38% with 1-year commitment for predictable workloads
 
 ## Next Steps
+
+### Security headers
+
+Add security headers to the app by creating `frontend/staticwebapp.config.json`:
+
+```json
+{
+  "globalHeaders": {
+    "Content-Security-Policy": "default-src 'self'; connect-src 'self' https://api.yourdomain.com; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()"
+  }
+}
+```
+
+Replace `https://api.yourdomain.com` in `connect-src` with your real API URL, or the browser will block the app from calling it. See [Security](../features/security.md#frontend-add-at-your-host).
+
+### Other
 
 - Set up monitoring and alerts
 - Configure backups for database

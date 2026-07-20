@@ -15,7 +15,7 @@ The landing site lives in `landing/`. The home route (`landing/app/routes/home.t
 
 - `landing/app/lib/config.ts` — `appName` and `siteUrl`.
 - `Logo.tsx` — swap in your logo (light/dark variants).
-- `landing/.env` — browser-exposed vars use the `PUBLIC_*` prefix (e.g. `PUBLIC_APP_NAME`, `PUBLIC_API_BASE_URL`).
+- `landing/.env` — browser-exposed vars use the `VITE_*` prefix (e.g. `VITE_APP_NAME`, `VITE_SITE_URL`).
 
 ## 3. Arrange your sections
 
