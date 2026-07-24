@@ -45,4 +45,4 @@ npm run dev         # dev server (hot reload)
 
 ## Continuous integration
 
-FastReact comes with a GitHub Actions workflow (`.github/workflows/ci.yml`) that runs on every push and pull request. It checks lint and types, and makes sure the apps build and the backend tests pass. It's yours to extend or adjust as your project grows.
+FastReact comes with a GitHub Actions workflow (`.github/workflows/ci.yml`) that runs on every push and pull request. It checks formatting, lint, and types, and makes sure the apps build and the backend tests pass. It's yours to extend or adjust as your project grows.
