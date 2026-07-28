@@ -27,8 +27,8 @@ Create a **Managed PostgreSQL** database (Databases → Create) and copy its con
 
 Add two **Static Site** components from the same repo:
 
-- **frontend** (`frontend/`): build `npm run build`; env `VITE_API_BASE_URL=https://api.yourdomain.com`; domain `app.yourdomain.com`.
-- **landing** (`landing/`): build `npm run build`; domain `yourdomain.com`.
+- **frontend** (`frontend/`): build `npm run build`; **Output Directory**: `build/client`; env `VITE_API_BASE_URL=https://api.yourdomain.com` (set as a build-time variable; static builds bake `VITE_*` in at build time); **Catchall document**: `index.html` (the SPA fallback, so deep links like `/settings` resolve); domain `app.yourdomain.com`.
+- **landing** (`landing/`): build `npm run build`; **Output Directory**: `build/client`; domain `yourdomain.com`.
 
 ### Serving the app from a sub-path
 
