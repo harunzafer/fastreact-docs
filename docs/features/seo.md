@@ -87,7 +87,7 @@ previews, add a `1200×630` PNG/JPG to `public/` and pass its absolute URL:
 
 ```tsx
 return seo({
-	title: 'NoteAI — Pricing',
+	title: 'NoteAI - Pricing',
 	description: 'Simple, transparent pricing for every stage of your SaaS.',
 	pathname: location.pathname,
 	image: `${config.siteUrl}/images/og-image.png`
