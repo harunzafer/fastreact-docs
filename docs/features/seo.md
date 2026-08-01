@@ -8,7 +8,7 @@ keywords: "fastreact seo, react router meta, canonical url, open graph, twitter 
 [FastReact](https://fastreact.dev)'s landing ships with a reusable `seo()` helper
 (`app/lib/seo.ts`) that builds a correct `<head>` for any route: a single title and meta
 description, a **self-referencing canonical**, and Open Graph / Twitter card tags. The homepage is
-already wired up — you only need this guide when you **add new routes**.
+already wired up. You only need this guide when you **add new routes**.
 
 ## Using the helper
 
@@ -22,14 +22,14 @@ import { seo } from '~/lib/seo';
 
 export function meta({ location }: Route.MetaArgs) {
 	return seo({
-		title: 'NoteAI — Pricing',
+		title: 'NoteAI - Pricing',
 		description: 'Simple, transparent pricing for every stage of your SaaS.',
 		pathname: location.pathname
 	});
 }
 ```
 
-The `location` argument supplies `pathname`, which the helper uses to derive the canonical — so
+The `location` argument supplies `pathname`, which the helper uses to derive the canonical, so
 every route points at itself with nothing to hardcode.
 
 ### Arguments
@@ -46,18 +46,18 @@ every route points at itself with nothing to hardcode.
 
 ## Why a shared helper (and not a layout default)
 
-It's tempting to put a default description or canonical somewhere global — e.g. the `meta` export in
-`root.tsx` — so every route inherits it. **Don't.** React Router merges meta by leaf route, but a
+It's tempting to put a default description or canonical somewhere global (e.g. the `meta` export in
+`root.tsx`) so every route inherits it. **Don't.** React Router merges meta by leaf route, but a
 global default still ships on pages that don't override it, and two things go wrong:
 
 - **Duplicate / stale descriptions.** A page that sets its own description on top of a global default
   can end up with two `<meta name="description">` tags, or silently inherit the wrong one. (A page
-  with no description of its own ships just the default — the trap springs once a page tries to
+  with no description of its own ships just the default; the trap springs once a page tries to
   override it, which most will.)
 - **Leaked canonical.** A hardcoded homepage canonical inherited by every route is a *consolidation
   hint* telling search engines those pages are duplicates of the homepage, so their ranking signals
-  get folded into it and they don't rank as themselves. (It's a hint, not a `noindex` — search
-  engines may ignore it — but you don't want to be fighting it.)
+  get folded into it and they don't rank as themselves. (It's a hint, not a `noindex`, so search
+  engines may ignore it, but you don't want to be fighting it.)
 
 `seo()` avoids both by returning exactly one description and a canonical derived from the **current
 path**:
