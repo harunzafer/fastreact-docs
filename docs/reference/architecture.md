@@ -111,24 +111,25 @@ app/
 ```
 
 !!! tip "Keep Layers Separated"
-Don't leak concerns between layers. Services shouldn't know about HTTP status codes or request objects. Repositories shouldn't contain business logic.
 
-    **Bad example** - Service returning HTTP exception:
+    Don't leak concerns between layers. Services shouldn't know about HTTP status codes or request objects. Repositories shouldn't contain business logic.
+
+    **Bad**: the service returns an HTTP exception:
     ```python
-    # ❌ Service layer shouldn't know about HTTP
+    # Wrong: the service layer shouldn't know about HTTP
     async def create_user(self, email: str):
         if self.user_repo.exists(email):
             raise HTTPException(status_code=409, detail="User exists")
     ```
 
-    **Good example** - Service throws domain exception, route handles HTTP:
+    **Good**: the service throws a domain exception, the route handles HTTP:
     ```python
-    # ✅ Service throws domain exception
+    # Right: the service throws a domain exception
     async def create_user(self, email: str):
         if self.user_repo.exists(email):
             raise UserAlreadyExistsException(email)
 
-    # ✅ Route converts to HTTP
+    # Right: the route converts it to HTTP
     @router.post("/users")
     async def create_user_route(data: UserCreate):
         try:
@@ -172,7 +173,7 @@ This centralization provides several benefits. Object lifecycles (singleton vs f
 
 ## 4. Database: Multi-Tenant PostgreSQL
 
-All data is scoped to an **organization** (the tenant boundary), so the schema serves both individual users and teams without changing. Migrations are plain SQL managed with **Sqitch** — no ORM. The mode (`b2c` / `b2b`) is set by `FS_MODE` and changes only application logic, not the schema.
+All data is scoped to an **organization** (the tenant boundary), so the schema serves both individual users and teams without changing. Migrations are plain SQL managed with **Sqitch**, no ORM. The mode (`b2c` / `b2b`) is set by `FS_MODE` and changes only application logic, not the schema.
 
 See **[Database](../features/database.md)** for the schema, `db_config`, and the Sqitch workflow, and **[Multi-Tenancy](../features/multi-tenancy.md)** for the organization, role, and invitation model.
 
@@ -277,7 +278,7 @@ await revalidate(); // re-runs the loader, which refetches the list
 
 !!! note "Revalidation keeps your data on screen"
 
-    React Router re-runs loaders inside a transition, so the current UI stays put until the new data is ready. It does **not** fall back to the `<Suspense>` skeleton. That is why deleting a row updates the list in place rather than flashing a spinner — and it is what makes polling through the loader viable (see `admin-health.tsx`).
+    React Router re-runs loaders inside a transition, so the current UI stays put until the new data is ready. It does **not** fall back to the `<Suspense>` skeleton. That is why deleting a row updates the list in place rather than flashing a spinner, and it is what makes polling through the loader viable (see `admin-health.tsx`).
 
 **Why not `useEffect`?** It only runs after the component mounts, so navigation completes, the page renders empty, and *then* the request starts. You also hand-roll `loading` and `error` state, refetching when a route param changes, and cancelling requests that a newer one superseded. Loaders do all of that for you, and fetch-on-mount is what the `react-hooks/set-state-in-effect` lint rule is warning you about.
 
@@ -373,9 +374,9 @@ Put imports at the top of the file by default. Python caches imported modules, s
 
 Move an import inside a function only for a specific reason:
 
-- **Optional dependencies** — a feature relying on a package not every install includes. An inline import keeps the module importable when the package is absent, failing only if the feature is actually used. The email provider factory does this: it imports the Azure, SendGrid, or Resend client only when that provider is selected, so you don't need all three SDKs installed.
-- **Breaking a circular import** — when two modules need each other at import time, a deferred import inside the function that needs it sidesteps the cycle.
-- **Smoke test isolation** — keeping a heavy or environment-dependent import out of module load so a smoke test can exercise the rest of the module without it.
+- **Optional dependencies**: a feature relying on a package not every install includes. An inline import keeps the module importable when the package is absent, failing only if the feature is actually used. The email provider factory does this: it imports the Azure, SendGrid, or Resend client only when that provider is selected, so you don't need all three SDKs installed.
+- **Breaking a circular import**: when two modules need each other at import time, a deferred import inside the function that needs it sidesteps the cycle.
+- **Smoke test isolation**: keeping a heavy or environment-dependent import out of module load so a smoke test can exercise the rest of the module without it.
 
 ### Why `Factory` vs `Singleton` in dependency injection?
 

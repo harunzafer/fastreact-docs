@@ -93,7 +93,7 @@ Revert to a safe point and redeploy:
 **Login returns 401 with correct credentials**
 
 1. Verify your admin user was created: `uv run scripts/create_admin.py`
-2. Check that `FR_ENVIRONMENT` is set correctly in `backend/.env`
+2. Check that `FS_ENVIRONMENT` is set correctly in `backend/.env`
 3. Verify database is running and migrations are applied
 
 **"CORS error" in browser console**
@@ -101,7 +101,7 @@ Revert to a safe point and redeploy:
 Add your frontend URL to CORS settings in `backend/.env`:
 
 ```bash
-FR_CORS_ORIGINS="http://localhost:5173,http://localhost:4173"
+FS_CORS_ORIGINS="http://localhost:5173,http://localhost:4173"
 ```
 
 **Google OAuth redirect fails**
@@ -114,7 +114,7 @@ http://localhost:8000/auth/oauth/google/callback
 
 **Session cookie not being set**
 
-In development, ensure `FR_ENVIRONMENT=dev` is set. The cookie `SameSite` and `Secure` settings differ between dev and production.
+In development, ensure `FS_ENVIRONMENT=dev` is set. The cookie `SameSite` and `Secure` settings differ between dev and production.
 
 ---
 
@@ -183,11 +183,11 @@ The email already exists in the database. Use a different email or check the exi
 
 **Emails not received in development**
 
-By default, development uses `stub` mode — check your backend logs for `[STUB EMAIL]` blocks containing the email content and links.
+By default, development uses `stub` mode. Check your backend logs for `[STUB EMAIL]` blocks containing the email content and links.
 
 **Email not sending in production**
 
-1. Verify `FR_EMAIL_PROVIDER` is set correctly
+1. Verify `FS_EMAIL_PROVIDER` is set correctly
 2. Check your API key is valid
 3. Ensure your sender domain is verified with the provider
 4. Check provider rate limits
@@ -198,7 +198,7 @@ By default, development uses `stub` mode — check your backend logs for `[STUB 
 
 **Webhook signature verification fails**
 
-The `FR_STRIPE_WEBHOOK_SECRET` doesn't match the one configured in Stripe dashboard.
+The `FS_STRIPE_WEBHOOK_SECRET` doesn't match the one configured in Stripe dashboard.
 
 Use the Stripe CLI for local testing:
 
@@ -206,7 +206,7 @@ Use the Stripe CLI for local testing:
 stripe listen --forward-to localhost:8000/webhook/stripe
 ```
 
-The CLI prints a webhook signing secret — use that value for local development.
+The CLI prints a webhook signing secret; use that value for local development.
 
 **Subscription not updating after payment**
 
@@ -247,4 +247,4 @@ If you're stuck:
 1. Check the [GitHub Issues](https://github.com/harunzafer/fastreact/issues) for similar problems
 2. Search for the error message online
 3. Review the [Architecture Overview](architecture.md) to understand expected behavior
-4. Enable debug logging in `backend/.env`: `FR_LOG_LEVEL=debug`
+4. Enable debug logging in `backend/.env`: `FS_LOG_LEVEL=debug`
