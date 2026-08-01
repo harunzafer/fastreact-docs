@@ -1,92 +1,97 @@
 ---
-description: "FastReact tutorials - Step-by-step guides for adding new entities, integrating APIs, implementing features, and extending the FastAPI backend and React Router v7 frontend."
-keywords: "fastreact tutorials, fastapi tutorial, react router v7 tutorial, add new entity, database migration, api integration, fullstack development"
+description: "Add a complete feature to FastReact end to end: migration, repository, service, routes, dependency injection, generated API client, and a React Router page built on the kit's loader pattern."
+keywords: "fastreact tutorial, fastapi add entity, react router crud, database migration, dependency injection, orval client, add feature fullstack"
 ---
 
 # Adding a Feature
 
-## Adding a New Entity (End-to-End)
+This guide adds a complete **Projects** feature: a database table, a CRUD API, and a page in the app. Every step mirrors the shipped **Notes** feature, so you can open the real file next to each snippet and see the same pattern with its production trimmings. Work in **DB → backend → frontend** order so the generated API client stays in sync (see [Development Workflow](development-workflow.md)).
 
-This tutorial walks through adding a complete "Projects" feature to demonstrate how to extend every layer of the FastReact stack. You'll learn to add database tables, backend APIs, and frontend interfaces.
+!!! note "About the schema name"
 
-### Overview
+    The SQL examples use `myapp` as the schema. Use your own: the value of `FS_DB_SCHEMA` in `backend/.env`, chosen when you ran `init.py`.
 
-We'll build a Projects feature that allows users to:
-
-- Create, read, update, and delete projects
-- Associate projects with the current organization
-- Display projects in a list and detail view
-
-### Step 1: Database Schema
-
-First, create a new migration for the projects table.
+## 1. Create the migration
 
 ```bash
 cd backend/db
-./sqitch.sh add projects -n "Add projects table"
+./sqitch.sh add add_project -n "Add project table"
 ```
 
-Edit the generated migration file `backend/db/deploy/projects.sql`:
+This creates three files: `deploy/add_project.sql` (how to apply the change), `revert/add_project.sql` (how to undo it), and `verify/add_project.sql` (how to prove it worked).
+
+Fill in `deploy/add_project.sql` below the generated header:
 
 ```sql
--- Deploy {schema_name}:projects to pg
--- Replace {schema_name} with your actual schema name (set during init.py)
-
 BEGIN;
 
-CREATE TABLE IF NOT EXISTS {schema_name}.project (
+CREATE TABLE myapp.project (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT,
-    organization_id INTEGER NOT NULL REFERENCES {schema_name}.organization(id) ON DELETE CASCADE,
-    user_id INTEGER NOT NULL REFERENCES {schema_name}."user"(id) ON DELETE CASCADE,
+    organization_id INTEGER NOT NULL REFERENCES myapp.organization(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES myapp."user"(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_project_organization ON {schema_name}.project(organization_id);
-CREATE INDEX IF NOT EXISTS idx_project_user ON {schema_name}.project(user_id);
+CREATE INDEX idx_project_organization ON myapp.project(organization_id);
 
 COMMIT;
 ```
 
-Create the revert script `backend/db/revert/projects.sql`:
+`organization_id` is what keeps tenants isolated: every query in the repository will filter on it. The index backs those queries.
+
+`revert/add_project.sql`:
 
 ```sql
--- Revert {schema_name}:projects from pg
-
 BEGIN;
 
-DROP INDEX IF EXISTS {schema_name}.idx_project_user;
-DROP INDEX IF EXISTS {schema_name}.idx_project_organization;
-DROP TABLE IF EXISTS {schema_name}.project;
+DROP TABLE IF EXISTS myapp.project;
 
 COMMIT;
 ```
 
-Apply the migration:
+`verify/add_project.sql` proves the table exists with the expected columns, the same way the kit's own verify scripts do:
+
+```sql
+BEGIN;
+
+SELECT id, name, description, organization_id, user_id, created_at, updated_at
+FROM myapp.project
+WHERE false;
+
+ROLLBACK;
+```
+
+Deploy it:
 
 ```bash
 ./sqitch.sh dev deploy
 ```
 
-### Step 2: Backend Models
+You will see the change apply:
 
-Create the Pydantic models in `backend/app/model/project.py`:
+```
+  + add_project .. ok
+```
+
+## 2. Define the models
+
+Create `backend/app/model/project_model.py`. Model files end in `_model.py`, and timestamped entities extend the shared `Timestamped` base instead of redeclaring the columns:
 
 ```python
-from datetime import datetime
 from pydantic import BaseModel
 
+from app.model.common import Timestamped
 
-class ProjectEntity(BaseModel):
+
+class Project(Timestamped):
     id: int
-    name: str
-    description: str | None = None
     organization_id: int
     user_id: int
-    created_at: datetime
-    updated_at: datetime
+    name: str
+    description: str | None = None
 
 
 class CreateProjectRequest(BaseModel):
@@ -99,88 +104,82 @@ class UpdateProjectRequest(BaseModel):
     description: str | None = None
 
 
-class ProjectResponse(BaseModel):
+class ProjectResponse(Timestamped):
     id: int
     name: str
     description: str | None = None
-    created_at: datetime
-    updated_at: datetime
 ```
 
-### Step 3: Repository Layer
+`Project` is the internal entity, one to one with a table row. `ProjectResponse` is what the API returns; it leaves out `organization_id` and `user_id` because the caller's session already determines both.
 
-Create `backend/app/data/repo/project_repo.py`:
+## 3. Add the repository
+
+Create `backend/app/data/repo/project_repo.py`. Repositories are the only layer that touches SQL. `self.schema` comes from `BaseRepo` (it reads `FS_DB_SCHEMA`), so the code itself stays schema-agnostic:
 
 ```python
 from app.data.repo.base_repo import BaseRepo
-from app.model.project import ProjectEntity
+from app.model.project_model import Project
 
 
 class ProjectRepo(BaseRepo):
     async def create_project(
-        self,
-        name: str,
-        description: str | None,
-        user_id: int,
-        organization_id: int
-    ) -> ProjectEntity:
+        self, organization_id: int, user_id: int, name: str, description: str | None
+    ) -> Project:
         query = f"""
-            INSERT INTO {self.schema}.project (name, description, user_id, organization_id)
+            INSERT INTO {self.schema}.project (organization_id, user_id, name, description)
             VALUES ($1, $2, $3, $4)
-            RETURNING id, name, description, organization_id, user_id, created_at, updated_at
+            RETURNING id, organization_id, user_id, name, description, created_at, updated_at
         """
-        row = await self.fetch_one(query, name, description, user_id, organization_id)
-        return ProjectEntity(**row)
+        row = await self.fetch_one(query, organization_id, user_id, name, description)
+        return Project(**row)
 
-    async def get_project_by_id(self, project_id: int, organization_id: int) -> ProjectEntity | None:
+    async def get_project_by_id(self, project_id: int, organization_id: int) -> Project | None:
         query = f"""
-            SELECT id, name, description, organization_id, user_id, created_at, updated_at
+            SELECT id, organization_id, user_id, name, description, created_at, updated_at
             FROM {self.schema}.project
             WHERE id = $1 AND organization_id = $2
         """
         row = await self.fetch_one(query, project_id, organization_id)
-        return ProjectEntity(**row) if row else None
+        return Project(**row) if row else None
 
-    async def get_projects_by_organization(self, organization_id: int) -> list[ProjectEntity]:
+    async def list_projects(self, organization_id: int) -> list[Project]:
         query = f"""
-            SELECT id, name, description, organization_id, user_id, created_at, updated_at
+            SELECT id, organization_id, user_id, name, description, created_at, updated_at
             FROM {self.schema}.project
             WHERE organization_id = $1
             ORDER BY created_at DESC
         """
         rows = await self.fetch_all(query, organization_id)
-        return [ProjectEntity(**row) for row in rows]
+        return [Project(**row) for row in rows]
 
     async def update_project(
-        self,
-        project_id: int,
-        name: str | None,
-        description: str | None,
-        organization_id: int
-    ) -> ProjectEntity | None:
+        self, project_id: int, organization_id: int, name: str | None, description: str | None
+    ) -> Project | None:
         query = f"""
             UPDATE {self.schema}.project
             SET name = COALESCE($3, name),
                 description = COALESCE($4, description),
                 updated_at = now()
             WHERE id = $1 AND organization_id = $2
-            RETURNING id, name, description, organization_id, user_id, created_at, updated_at
+            RETURNING id, organization_id, user_id, name, description, created_at, updated_at
         """
         row = await self.fetch_one(query, project_id, organization_id, name, description)
-        return ProjectEntity(**row) if row else None
+        return Project(**row) if row else None
 
     async def delete_project(self, project_id: int, organization_id: int) -> None:
         query = f"DELETE FROM {self.schema}.project WHERE id = $1 AND organization_id = $2"
         await self.execute(query, project_id, organization_id)
 ```
 
-### Step 4: Service Layer
+Every read and write carries `organization_id` in the `WHERE` clause. A user can never reach another organization's rows, even with a guessed id, because the filter is part of the query itself rather than a check bolted on afterwards.
 
-Create `backend/app/service/project_service.py`:
+## 4. Add the service
+
+Create `backend/app/service/project_service.py`. The service owns business logic; for plain CRUD it stays thin, and that's fine. It exists so that when rules arrive (quotas, notifications, cross-entity checks) they have a home that isn't a route handler:
 
 ```python
 from app.data.repo.project_repo import ProjectRepo
-from app.model.project import CreateProjectRequest, ProjectEntity, UpdateProjectRequest
+from app.model.project_model import CreateProjectRequest, Project, UpdateProjectRequest
 
 
 class ProjectService:
@@ -188,53 +187,44 @@ class ProjectService:
         self.project_repo = project_repo
 
     async def create_project(
-        self,
-        organization_id: int,
-        user_id: int,
-        data: CreateProjectRequest
-    ) -> ProjectEntity:
+        self, organization_id: int, user_id: int, data: CreateProjectRequest
+    ) -> Project:
         return await self.project_repo.create_project(
-            data.name, data.description, user_id, organization_id
+            organization_id, user_id, data.name, data.description
         )
 
-    async def list_projects(self, organization_id: int) -> list[ProjectEntity]:
-        return await self.project_repo.get_projects_by_organization(organization_id)
+    async def list_projects(self, organization_id: int) -> list[Project]:
+        return await self.project_repo.list_projects(organization_id)
 
-    async def get_project(
-        self,
-        project_id: int,
-        organization_id: int
-    ) -> ProjectEntity | None:
+    async def get_project(self, project_id: int, organization_id: int) -> Project | None:
         return await self.project_repo.get_project_by_id(project_id, organization_id)
 
     async def update_project(
-        self,
-        project_id: int,
-        organization_id: int,
-        data: UpdateProjectRequest
-    ) -> ProjectEntity | None:
+        self, project_id: int, organization_id: int, data: UpdateProjectRequest
+    ) -> Project | None:
         return await self.project_repo.update_project(
-            project_id, data.name, data.description, organization_id
+            project_id, organization_id, data.name, data.description
         )
 
     async def delete_project(self, project_id: int, organization_id: int) -> None:
         await self.project_repo.delete_project(project_id, organization_id)
 ```
 
-### Step 5: API Routes
+## 5. Add the routes
 
 Create `backend/app/api/route/project_route.py`:
 
 ```python
+from dependency_injector.wiring import Provide, inject
+from fastapi import APIRouter, Depends
+
 from app.api.middleware.auth_handler import min_role_required
 from app.config.container import Container
 from app.exception.common_exception import ResourceNotFound
-from app.model.project import CreateProjectRequest, ProjectResponse, UpdateProjectRequest
+from app.model.project_model import CreateProjectRequest, ProjectResponse, UpdateProjectRequest
 from app.model.role_model import Role
 from app.model.user_model import CurrentUser
 from app.service.project_service import ProjectService
-from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends
 
 router = APIRouter()
 
@@ -246,16 +236,14 @@ async def create_project(
     user: CurrentUser = Depends(min_role_required(Role.MEMBER)),
     project_service: ProjectService = Depends(Provide[Container.project_service]),
 ):
-    project = await project_service.create_project(
-        user.organization_id, user.id, data
-    )
+    project = await project_service.create_project(user.organization_id, user.id, data)
     return ProjectResponse.model_validate(project.model_dump())
 
 
 @router.get("", response_model=list[ProjectResponse], operation_id="listProjects")
 @inject
 async def list_projects(
-    user: CurrentUser = Depends(min_role_required(Role.MEMBER)),
+    user: CurrentUser = Depends(min_role_required(Role.READONLY)),
     project_service: ProjectService = Depends(Provide[Container.project_service]),
 ):
     projects = await project_service.list_projects(user.organization_id)
@@ -266,7 +254,7 @@ async def list_projects(
 @inject
 async def get_project(
     project_id: int,
-    user: CurrentUser = Depends(min_role_required(Role.MEMBER)),
+    user: CurrentUser = Depends(min_role_required(Role.READONLY)),
     project_service: ProjectService = Depends(Provide[Container.project_service]),
 ):
     project = await project_service.get_project(project_id, user.organization_id)
@@ -283,9 +271,7 @@ async def update_project(
     user: CurrentUser = Depends(min_role_required(Role.MEMBER)),
     project_service: ProjectService = Depends(Provide[Container.project_service]),
 ):
-    project = await project_service.update_project(
-        project_id, user.organization_id, data
-    )
+    project = await project_service.update_project(project_id, user.organization_id, data)
     if not project:
         raise ResourceNotFound("project", project_id)
     return ProjectResponse.model_validate(project.model_dump())
@@ -304,347 +290,406 @@ async def delete_project(
     await project_service.delete_project(project_id, user.organization_id)
 ```
 
-### Step 6: Dependency Injection Setup
+Three conventions to notice, all copied from the shipped `note_route.py`:
 
-Update `backend/app/config/container.py` to include the new components:
+- **Reads take `Role.READONLY`, writes take `Role.MEMBER`.** A read-only user can browse but not change anything.
+- **`operation_id` becomes the TypeScript function name** when the API client is generated (`listProjects()` in the frontend). See [Type-Safe API Client](orval.md).
+- **Missing rows raise `ResourceNotFound`**, which the exception middleware turns into a clean 404. Services and repositories never touch HTTP status codes.
+
+!!! tip "Want a per-plan limit on projects?"
+
+    The notes feature caps creation with a plan quota (`max_notes`). To do the same for projects, follow [Metering a Custom Feature](metering-a-custom-feature.md).
+
+## 6. Wire it into the container
+
+Register the new classes in `backend/app/config/container.py`. There are **three** additions, and the third is the one that's easy to forget.
+
+Add the imports:
 
 ```python
-# 1. Add to imports at the top of the file
 from app.data.repo.project_repo import ProjectRepo
 from app.service.project_service import ProjectService
+```
 
-# 2. Add to the Container class in the repositories section
+Add the providers, next to the existing repository and service registrations. Everything in the container is a `Singleton`: repositories and services hold no per-request state, so one instance serves the whole app:
+
+```python
 project_repo = providers.Singleton(ProjectRepo, db_config=db_config)
 
-# 3. Add to the Container class in the services section
 project_service = providers.Singleton(
     ProjectService,
     project_repo=project_repo,
 )
 ```
 
-### Step 7: Register Routes
-
-Update `backend/app/api/router.py` to include the new routes:
+Add the route module to the `wiring_config` list in the same file:
 
 ```python
-# 1. Add to imports at the top
+    wiring_config = containers.WiringConfiguration(
+        modules=[
+            # ...existing modules...
+            "app.api.route.project_route",
+        ]
+    )
+```
+
+!!! warning "Skipping the wiring entry breaks the routes at runtime"
+
+    `@inject` only works in modules listed in `wiring_config`. Leave `app.api.route.project_route` out and the app still starts, but every `/projects` request fails, because `Provide[Container.project_service]` is never replaced with a real service.
+
+## 7. Register the router
+
+In `backend/app/api/router.py`, import the router and add it inside `include_all_routers()`:
+
+```python
 from app.api.route.project_route import router as project_router
 
-# 2. Add to include_all_routers() function
 app.include_router(project_router, prefix="/projects", tags=["Projects"])
 ```
 
-### Step 8: Test the Backend API
+The `Projects` tag groups the endpoints in the OpenAPI spec, and the generated client uses it to name the module (`projects.ts`).
 
-Start the backend and verify the endpoints work:
+## 8. Run it: test the API
+
+Start the backend:
 
 ```bash
 cd backend
 uv run uvicorn app.main:app --reload
 ```
 
-Visit `http://localhost:8000/docs` to see the auto-generated OpenAPI docs for your new Projects endpoints.
+Open [localhost:8000/docs](http://localhost:8000/docs). You will see a **Projects** section with the five endpoints. If it's missing, revisit step 7; if the endpoints are there but return 500, revisit step 6.
 
-### Step 9: Generate Frontend API Client
+The kit ships `.http` test files under `backend/http/` for the [REST Client](https://marketplace.visualstudio.com/items?itemName=humao.rest-client) VSCode extension. Add `backend/http/22_projects.http`:
 
-After adding the backend routes, regenerate the TypeScript API client:
+```http
+### Projects API
+### Log in first via 01_auth.http; the session cookie persists across files.
+
+@baseUrl = {{$dotenv BASE_URL}}
+
+### Create project
+POST {{baseUrl}}/projects
+Content-Type: application/json
+
+{
+  "name": "My first project",
+  "description": "Testing the new feature"
+}
+
+### List projects
+GET {{baseUrl}}/projects
+
+### Get one
+# @prompt projectId
+GET {{baseUrl}}/projects/{{projectId}}
+
+### Update
+# @prompt projectId
+PUT {{baseUrl}}/projects/{{projectId}}
+Content-Type: application/json
+
+{
+  "name": "Renamed project"
+}
+
+### Delete
+# @prompt projectId
+DELETE {{baseUrl}}/projects/{{projectId}}
+
+### Missing project returns 404
+GET {{baseUrl}}/projects/99999
+```
+
+Open `01_auth.http`, run the login request, then run "Create project". You will see the JSON response:
+
+```json
+{
+  "id": 1,
+  "name": "My first project",
+  "description": "Testing the new feature",
+  "created_at": "2026-08-01T12:00:00.000000+00:00",
+  "updated_at": "2026-08-01T12:00:00.000000+00:00"
+}
+```
+
+??? note "Testing with curl instead"
+
+    Log in once and reuse the session cookie:
+
+    ```bash
+    curl -X POST http://localhost:8000/auth/login \
+      -H "Content-Type: application/json" \
+      -d '{"email": "you@example.com", "password": "your-password"}' \
+      -c cookies.txt
+
+    curl -X POST http://localhost:8000/projects \
+      -H "Content-Type: application/json" \
+      -d '{"name": "My first project"}' \
+      -b cookies.txt
+
+    curl http://localhost:8000/projects -b cookies.txt
+    ```
+
+## 9. Regenerate the API client
+
+With the backend still running:
 
 ```bash
 cd frontend
 npm run generate
 ```
 
-This creates the API functions in `app/lib/api/gen/` that you'll use in the frontend.
+You will see a new `projects.ts` module in `frontend/app/lib/api/gen/` exporting `createProject`, `listProjects`, `getProject`, `updateProject`, and `deleteProject`, fully typed from the OpenAPI spec.
 
-### Step 10: Build Frontend Components
+## 10. Build the routes
 
-Create the projects list page at `frontend/app/routes/protected/projects.tsx`:
+Data loading follows the kit's loader pattern: the route module's `clientLoader` fetches, the component renders. No `useEffect`, no hand-rolled `loading` flags. Refreshing after a mutation is one call: `revalidate()` re-runs every loader on the active route. The shipped notes route is the annotated reference for everything in this step; open `frontend/app/routes/protected/notes.tsx` alongside it.
+
+Create `frontend/app/routes/protected/projects.tsx`:
 
 ```tsx
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router";
-import { listProjects, deleteProject } from "~/lib/api/gen/projects";
-import type { ProjectResponse } from "~/lib/api/gen/model";
+import { Suspense } from 'react';
+import { Await, useLoaderData, useNavigate, useRevalidator } from 'react-router';
+import { deleteProject, listProjects } from '~/lib/api/gen/projects';
+import { PageHeader } from '~/components/PageHeader';
+import { toast } from '~/lib/utils/toast';
 
-export default function ProjectsPage() {
-  const navigate = useNavigate();
-  const [projects, setProjects] = useState<ProjectResponse[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export async function clientLoader() {
+	// No await: the route receives a promise and renders the Suspense fallback
+	// while it resolves. A rejected promise lands in <Await errorElement>.
+	return { projects: listProjects().then((projects) => projects ?? []) };
+}
 
-  useEffect(() => {
-    loadProjects();
-  }, []);
+export default function Projects() {
+	const { projects } = useLoaderData<typeof clientLoader>();
+	const navigate = useNavigate();
+	const { revalidate } = useRevalidator();
 
-  async function loadProjects() {
-    setLoading(true);
-    try {
-      const data = await listProjects();
-      setProjects(data ?? []);
-    } catch (err) {
-      setError("Failed to load projects");
-      console.error("Error loading projects:", err);
-    } finally {
-      setLoading(false);
-    }
-  }
+	// Nothing copies the loader data into useState, and there is no loading
+	// flag: Suspense + Await render all three states from the promise itself.
+	async function handleDelete(id: number) {
+		if (!confirm('Delete this project?')) return;
+		try {
+			await deleteProject(id);
+			// Re-runs the loader, which refetches the list. This is how every
+			// mutation refreshes its page.
+			await revalidate();
+			toast.success('Project deleted');
+		} catch {
+			toast.error('Failed to delete project. Please try again.');
+		}
+	}
 
-  async function handleDelete(projectId: number) {
-    if (!confirm("Are you sure you want to delete this project?")) return;
-    try {
-      await deleteProject(projectId);
-      await loadProjects();
-    } catch (err) {
-      setError("Failed to delete project");
-    }
-  }
+	return (
+		<>
+			<PageHeader title="Projects" subtitle="Everything your organization is working on" />
 
-  if (loading) {
-    return (
-      <div className="flex justify-center p-8">
-        <span className="loading loading-spinner loading-lg" />
-      </div>
-    );
-  }
+			<div className="mt-6 mb-6 flex justify-end">
+				<button className="btn btn-primary" onClick={() => navigate('/projects/new')}>
+					New project
+				</button>
+			</div>
 
-  return (
-    <div className="container mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Projects</h1>
-        <button
-          className="btn btn-primary"
-          onClick={() => navigate("/projects/new")}
-        >
-          Create Project
-        </button>
-      </div>
-
-      {error && (
-        <div className="alert alert-error mb-4">
-          <span>{error}</span>
-        </div>
-      )}
-
-      {projects.length === 0 ? (
-        <div className="text-center py-8">
-          <p className="text-base-content/60 mb-4">No projects yet</p>
-          <button
-            className="btn btn-primary"
-            onClick={() => navigate("/projects/new")}
-          >
-            Create Your First Project
-          </button>
-        </div>
-      ) : (
-        <div className="grid gap-4">
-          {projects.map((project) => (
-            <div key={project.id} className="card bg-base-100 shadow-xl">
-              <div className="card-body">
-                <h2 className="card-title">{project.name}</h2>
-                {project.description && <p>{project.description}</p>}
-                <p className="text-sm text-base-content/60">
-                  Created: {new Date(project.created_at).toLocaleDateString()}
-                </p>
-                <div className="card-actions justify-end">
-                  <button
-                    className="btn btn-outline btn-sm"
-                    onClick={() => navigate(`/projects/${project.id}`)}
-                  >
-                    View
-                  </button>
-                  <button
-                    className="btn btn-outline btn-sm"
-                    onClick={() => navigate(`/projects/${project.id}/edit`)}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className="btn btn-error btn-outline btn-sm"
-                    onClick={() => handleDelete(project.id)}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+			<Suspense
+				fallback={
+					<div className="grid gap-4 md:grid-cols-2">
+						{Array.from({ length: 4 }, (_, i) => (
+							<div key={i} className="skeleton h-32 w-full" />
+						))}
+					</div>
+				}
+			>
+				<Await
+					resolve={projects}
+					errorElement={
+						<div className="alert alert-error">
+							<span>Failed to load projects. Please try again.</span>
+						</div>
+					}
+				>
+					{(resolved) =>
+						resolved.length === 0 ? (
+							<p className="text-base-content/60">No projects yet. Create the first one.</p>
+						) : (
+							<div className="grid gap-4 md:grid-cols-2">
+								{resolved.map((project) => (
+									<div
+										key={project.id}
+										className="card bg-base-100 border-base-200 border shadow-sm"
+									>
+										<div className="card-body">
+											<h2 className="card-title">{project.name}</h2>
+											{project.description && <p>{project.description}</p>}
+											<div className="card-actions justify-end">
+												<button
+													className="btn btn-outline btn-sm"
+													onClick={() => handleDelete(project.id)}
+												>
+													Delete
+												</button>
+											</div>
+										</div>
+									</div>
+								))}
+							</div>
+						)
+					}
+				</Await>
+			</Suspense>
+		</>
+	);
 }
 ```
 
-Create the new project form at `frontend/app/routes/protected/projects-new.tsx`:
+The `confirm()` dialog keeps this example short; the notes route shows the same flow with a proper modal.
+
+Create the form at `frontend/app/routes/protected/projects-new.tsx`, using react-hook-form with a zod resolver the same way the notes create modal does:
 
 ```tsx
-import { useState } from "react";
-import { useNavigate } from "react-router";
-import { createProject } from "~/lib/api/gen/projects";
+import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { useNavigate } from 'react-router';
+import { createProject } from '~/lib/api/gen/projects';
+import { getErrorMessage } from '~/lib/api/fetch';
+import { PageHeader } from '~/components/PageHeader';
 
-export default function NewProjectPage() {
-  const navigate = useNavigate();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const schema = z.object({
+	name: z.string().trim().min(1, 'Project name is required'),
+	description: z.string()
+});
+type FormValues = z.infer<typeof schema>;
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) {
-      setError("Project name is required");
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      await createProject({ name, description: description || undefined });
-      navigate("/projects");
-    } catch (err) {
-      setError("Failed to create project");
-    } finally {
-      setLoading(false);
-    }
-  }
+export default function ProjectsNew() {
+	const navigate = useNavigate();
+	const [submitError, setSubmitError] = useState('');
+	const [submitting, setSubmitting] = useState(false);
 
-  return (
-    <div className="container mx-auto p-6 max-w-md">
-      <h1 className="text-3xl font-bold mb-6">Create New Project</h1>
+	const {
+		register,
+		handleSubmit,
+		formState: { errors, isValid }
+	} = useForm<FormValues>({
+		// onChange keeps isValid live, so the submit button enables only when
+		// the form would actually pass validation.
+		mode: 'onChange',
+		resolver: zodResolver(schema),
+		defaultValues: { name: '', description: '' }
+	});
 
-      {error && (
-        <div className="alert alert-error mb-4">
-          <span>{error}</span>
-        </div>
-      )}
+	async function onSubmit(values: FormValues) {
+		setSubmitting(true);
+		setSubmitError('');
+		try {
+			await createProject({
+				name: values.name,
+				description: values.description || null
+			});
+			navigate('/projects');
+		} catch (err) {
+			setSubmitError(getErrorMessage(err, 'Failed to create project. Please try again.'));
+		} finally {
+			setSubmitting(false);
+		}
+	}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="form-control">
-          <label className="label" htmlFor="name">
-            <span className="label-text">Project Name *</span>
-          </label>
-          <input
-            id="name"
-            type="text"
-            className="input input-bordered"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            disabled={loading}
-          />
-        </div>
+	return (
+		<>
+			<PageHeader title="New project" />
 
-        <div className="form-control">
-          <label className="label" htmlFor="description">
-            <span className="label-text">Description</span>
-          </label>
-          <textarea
-            id="description"
-            className="textarea textarea-bordered"
-            rows={3}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            disabled={loading}
-          />
-        </div>
+			<form className="mt-6 max-w-md space-y-4" onSubmit={handleSubmit(onSubmit)} noValidate>
+				{submitError && (
+					<div className="alert alert-error">
+						<span>{submitError}</span>
+					</div>
+				)}
 
-        <div className="flex gap-2">
-          <button
-            type="submit"
-            className="btn btn-primary flex-1"
-            disabled={loading}
-          >
-            {loading ? (
-              <span className="loading loading-spinner loading-sm" />
-            ) : (
-              "Create Project"
-            )}
-          </button>
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={() => navigate("/projects")}
-            disabled={loading}
-          >
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
-  );
+				<div className="form-control">
+					<label className="label" htmlFor="name">
+						<span className="label-text">Name</span>
+					</label>
+					<input
+						id="name"
+						type="text"
+						className={`input input-bordered ${errors.name ? 'input-error' : ''}`}
+						{...register('name')}
+					/>
+					{errors.name && <span className="text-error text-sm">{errors.name.message}</span>}
+				</div>
+
+				<div className="form-control">
+					<label className="label" htmlFor="description">
+						<span className="label-text">Description</span>
+					</label>
+					<textarea
+						id="description"
+						rows={3}
+						className="textarea textarea-bordered"
+						{...register('description')}
+					/>
+				</div>
+
+				<div className="flex gap-2">
+					<button type="submit" className="btn btn-primary" disabled={submitting || !isValid}>
+						{submitting ? 'Creating...' : 'Create project'}
+					</button>
+					<button type="button" className="btn btn-outline" onClick={() => navigate('/projects')}>
+						Cancel
+					</button>
+				</div>
+			</form>
+		</>
+	);
 }
 ```
 
-### Step 11: Register Routes
+There is no `revalidate()` after create: navigating to `/projects` runs its loader anyway.
 
-Update `frontend/app/routes.ts` to include the new project routes:
+## 11. Register the routes
 
-```typescript
-import { type RouteConfig, layout, route } from "@react-router/dev/routes";
+Routes are declared in `frontend/app/routes.ts`. Add both inside the protected layout, next to the notes entries:
 
-export default [
-  layout("routes/protected/layout.tsx", [
-    // ... existing routes ...
-    route("projects", "routes/protected/projects.tsx"),
-    route("projects/new", "routes/protected/projects-new.tsx"),
-    route("projects/:id/edit", "routes/protected/projects-edit.tsx"),
-  ]),
-] satisfies RouteConfig;
+```ts
+route('projects', 'routes/protected/projects.tsx'),
+route('projects/new', 'routes/protected/projects-new.tsx'),
 ```
 
-### Step 12: Add Navigation
+## 12. Add it to the sidebar
 
-Update your sidebar component to include the projects link:
+Navigation lives in `frontend/app/components/admin-layout/menu.ts` as a typed array. Add an entry:
 
-```tsx
-<li>
-  <NavLink to="/projects" className={({ isActive }) => isActive ? "active" : ""}>
-    Projects
-  </NavLink>
-</li>
+```ts
+{
+	id: 'projects',
+	icon: 'lucide--folder',
+	label: 'Projects',
+	url: '/projects',
+	minRole: 'readonly'
+},
 ```
 
-### Step 13: Test the Complete Feature
+`minRole: 'readonly'` matches the routes: read-only users can open the list, and the write buttons are the backend's problem to refuse.
 
-**1. Start the database** (if not already running):
+## 13. Run it end to end
 
-```bash
-docker compose up db -d
-```
-
-**2. Start the backend**:
-
-```bash
-cd backend
-uv run uvicorn app.main:app --reload
-```
-
-**3. Start the frontend** (in a new terminal):
+Start the frontend (with the backend still running):
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-**4. Navigate to projects**: Visit `http://localhost:5173/projects`
+Open [localhost:5173/projects](http://localhost:5173/projects). You will see the skeleton flash, then the project you created in step 8. Create another through the form, delete one from the list, and watch the list refresh without a page reload.
 
-**5. Test CRUD operations**: Create, view, edit, and delete projects.
+## Recap
 
-### Summary
+- Write the migration (`deploy`, `revert`, `verify`) and deploy it with `./sqitch.sh dev deploy`.
+- Add the four backend pieces: `project_model.py`, `project_repo.py`, `project_service.py`, `project_route.py`.
+- Register all of it in `container.py`: two `Singleton` providers **and** the `wiring_config` entry.
+- Include the router in `router.py` and confirm it in `/docs`.
+- Regenerate the typed client with `npm run generate`.
+- Add a route module with a `clientLoader` that returns an un-awaited promise, render it with `Suspense` + `Await`, refresh with `revalidate()`, then register the route and a menu entry.
 
-You've successfully added a complete "Projects" feature that demonstrates:
-
-- **Database design**: Migration with proper foreign keys and constraints
-- **Backend architecture**: Repository pattern, service layer, API routes
-- **Dependency injection**: Proper container configuration
-- **API design**: RESTful endpoints with proper HTTP status codes
-- **Frontend integration**: API client generation and React components
-- **Security**: Organization-based data isolation and authentication
-
-This pattern can be applied to add any new entity to your FastReact application. The key principles are:
-
-1. Start with the database schema
-2. Build from the data layer up (repository → service → routes)
-3. Configure dependency injection
-4. Generate and use the API client on the frontend
-5. Build React components following the existing design patterns
+The same thirteen steps add any entity to FastReact. When your feature outgrows plain CRUD, the notes feature shows where each addition goes: quotas in the route via the usage service, AI actions via the copilot pattern, business rules in the service.
