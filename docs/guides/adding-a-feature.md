@@ -3,9 +3,7 @@ description: "FastReact tutorials - Step-by-step guides for adding new entities,
 keywords: "fastreact tutorials, fastapi tutorial, react router v7 tutorial, add new entity, database migration, api integration, fullstack development"
 ---
 
-# Tutorials
-
-This section provides step-by-step guides for extending [FastReact](https://fastreact.dev) with new functionality.
+# Adding a Feature
 
 ## Adding a New Entity (End-to-End)
 
