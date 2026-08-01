@@ -276,7 +276,7 @@ await revalidate(); // re-runs the loader, which refetches the list
 
 `revalidate()` re-runs every loader on the active route, so there is nothing to name and nothing to keep in sync.
 
-!!! note "Revalidation keeps your data on screen"
+??? note "Revalidation keeps your data on screen"
 
     React Router re-runs loaders inside a transition, so the current UI stays put until the new data is ready. It does **not** fall back to the `<Suspense>` skeleton. That is why deleting a row updates the list in place rather than flashing a spinner, and it is what makes polling through the loader viable (see `admin-health.tsx`).
 
