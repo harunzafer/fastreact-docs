@@ -1,4 +1,5 @@
 ---
+title: "Deploy FastAPI + React on Fly.io, Neon, and Vercel"
 description: "Deploy FastReact best-of-breed: FastAPI on Fly.io, PostgreSQL on Neon, and the React app + landing on Vercel."
 keywords: "deploy fastreact fly.io, neon postgres, vercel react, fastapi fly, best-of-breed saas deploy"
 ---

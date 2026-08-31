@@ -1,4 +1,5 @@
 ---
+title: "Deploy FastAPI + React to DigitalOcean"
 description: "Deploy FastReact on DigitalOcean App Platform: FastAPI container, managed PostgreSQL, and the React app + landing as static sites, with custom domains."
 keywords: "deploy fastreact digitalocean, app platform fastapi, do managed postgres, digitalocean react"
 ---

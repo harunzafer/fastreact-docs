@@ -1,4 +1,5 @@
 ---
+title: "Self-Host FastAPI + React with Docker Compose"
 description: "Deploy FastReact with Docker Compose - Self-hosted deployment on your own server or VPS."
 keywords: "docker compose deployment, self-hosted fastreact, vps deployment"
 ---

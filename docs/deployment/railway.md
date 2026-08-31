@@ -1,4 +1,5 @@
 ---
+title: "Deploy FastAPI + React to Railway"
 description: "Deploy FastReact end-to-end on Railway: the FastAPI backend, PostgreSQL, and the React app + landing, with custom domains."
 keywords: "deploy fastreact railway, railway fastapi, railway postgres, railway react, railway docker deploy"
 ---
