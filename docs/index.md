@@ -37,3 +37,4 @@ Open **[localhost:5173](http://localhost:5173)** and log in with the admin you c
 - **[Guides](guides/project-setup.md)**: set up your project, develop, and ship
 - **[Features](features/authentication.md)**: auth, billing, AI, multi-tenancy, and more
 - **[Architecture](reference/architecture.md)** · **[Deployment](deployment/index.md)**
+- **[How to use FastAPI with React](https://fastreact.dev/fastapi-react)**: background on the SPA + API pairing (CORS, session cookies, repo layout)
